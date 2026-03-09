@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Messenger</title>
+</head>
+
+<body>
+
+<h2>Чат</h2>
+
+<input id="message" placeholder="Напиши сообщение">
+<button onclick="sendMessage()">Отправить</button>
+
+<ul id="messages"></ul>
+
+<script>
+
+const ws = new WebSocket(
+  (location.protocol === "https:" ? "wss://" : "ws://") +
+  location.host +
+  "/ws"
+);
+
+ws.onmessage = function(event) {
+    const messages = document.getElementById("messages");
+    const li = document.createElement("li");
+    li.textContent = event.data;
+    messages.appendChild(li);
+};
+
+function sendMessage() {
+    const input = document.getElementById("message");
+    ws.send(input.value);
+
+    const messages = document.getElementById("messages");
+    const li = document.createElement("li");
+    li.textContent = "Я: " + input.value;
+    messages.appendChild(li);
+
+    input.value = "";
+}
+
+</script>
+
+</body>
+</html>
