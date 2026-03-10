@@ -3,93 +3,331 @@
 
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
 <title>Messenger</title>
+
+<link rel="manifest" href="/manifest.json">
+
+<style>
+
+body{
+margin:0;
+font-family:Arial;
+display:flex;
+height:100vh;
+background:#f0f2f5;
+}
+
+#users{
+width:250px;
+background:white;
+border-right:1px solid #ddd;
+display:flex;
+flex-direction:column;
+}
+
+#usersList{
+flex:1;
+overflow:auto;
+padding:10px;
+}
+
+.user{
+padding:10px;
+cursor:pointer;
+border-radius:6px;
+}
+
+.user:hover{
+background:#f2f2f2;
+}
+
+#chat{
+flex:1;
+display:flex;
+flex-direction:column;
+}
+
+#messages{
+flex:1;
+overflow:auto;
+padding:15px;
+display:flex;
+flex-direction:column;
+}
+
+.message{
+padding:8px 12px;
+border-radius:10px;
+margin:4px 0;
+max-width:70%;
+}
+
+.me{
+background:#4CAF50;
+color:white;
+align-self:flex-end;
+}
+
+.other{
+background:#e4e6eb;
+}
+
+#sendBox{
+padding:10px;
+border-top:1px solid #ddd;
+background:white;
+}
+
+#message{
+width:100%;
+padding:10px;
+border-radius:6px;
+border:1px solid #ccc;
+}
+
+.online{color:green}
+.offline{color:gray}
+
+#typing{
+font-size:12px;
+color:gray;
+padding-left:10px;
+}
+
+</style>
+
 </head>
 
 <body>
 
-<h2>Messenger</h2>
+<div id="users">
 
-<button onclick="register()">Регистрация</button>
-<button onclick="login()">Вход</button>
+<h3 id="account"></h3>
 
-<br><br>
+<button onclick="register()">Зарегистрироваться</button>
+<button onclick="login()">Войти</button>
 
-<input id="message" placeholder="username:сообщение">
-<button onclick="sendMessage()">Отправить</button>
+<h3>Пользователи</h3>
 
-<ul id="messages"></ul>
+<div id="usersList"></div>
+
+</div>
+
+
+<div id="chat">
+
+<h3 id="currentChat">Чат не выбран</h3>
+
+<div id="typing"></div>
+
+<div id="messages"></div>
+
+<div id="sendBox">
+<input id="message" placeholder="Сообщение">
+</div>
+
+</div>
 
 <script>
 
-let ws;
+if ("Notification" in window) {
+Notification.requestPermission()
+}
 
-function connect() {
+let ws
+let currentChat=null
+let myName=null
+let typingTimeout
 
-    ws = new WebSocket(
-        (location.protocol === "https:" ? "wss://" : "ws://") +
-        location.host +
-        "/ws"
-    );
+function connect(){
 
-    ws.onmessage = function(event) {
+ws=new WebSocket(
+(location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws"
+)
 
-        const messages = document.getElementById("messages");
+ws.onmessage=function(event){
 
-        const li = document.createElement("li");
+if(event.data.startsWith("USER:")){
 
-        li.textContent = event.data;
+let parts=event.data.split(":")
+let username=parts[1]
+let status=parts[2]
 
-        messages.appendChild(li);
+if(username===myName)return
 
-    };
+let div=document.createElement("div")
+
+div.className="user"
+
+div.innerHTML=username+" <span class='"+status+"'>●</span>"
+
+div.onclick=function(){
+
+currentChat=username
+
+document.getElementById("currentChat").innerText="Чат с "+username
+
+document.getElementById("messages").innerHTML=""
+
+ws.send("LOAD_CHAT:"+username)
 
 }
 
-function register() {
+document.getElementById("usersList").appendChild(div)
 
-    connect();
+return
+}
 
-    const username = prompt("Введите имя");
 
-    ws.onopen = () => {
-        ws.send("register:" + username);
-    };
+if(event.data.startsWith("MSG:")){
 
-    ws.onmessage = function(event) {
+let parts=event.data.split(":")
+let sender=parts[1]
+let text=parts[2]
 
-        if(event.data.startsWith("YOUR_CODE:")){
+let msg=document.createElement("div")
 
-            const code = event.data.split(":")[1];
+msg.className="message"
 
-            alert("Ваш код: " + code + " Сохраните его!");
+if(sender===myName){
+msg.classList.add("me")
+}else{
+msg.classList.add("other")
+}
 
-        }
+msg.innerText=text
 
-    };
+document.getElementById("messages").appendChild(msg)
+
+if(sender!==myName && document.hidden){
+
+if(Notification.permission==="granted"){
+new Notification("Новое сообщение от "+sender,{body:text})
+}
 
 }
 
-function login() {
+return
+}
 
-    connect();
 
-    const code = prompt("Введите ваш код");
+if(event.data.startsWith("TYPING:")){
 
-    ws.onopen = () => {
-        ws.send("login:" + code);
-    };
+let user=event.data.split(":")[1]
+
+document.getElementById("typing").innerText=user+" печатает..."
+
+clearTimeout(typingTimeout)
+
+typingTimeout=setTimeout(()=>{
+document.getElementById("typing").innerText=""
+},1500)
 
 }
 
-function sendMessage() {
+}
 
-    const input = document.getElementById("message");
+}
 
-    ws.send(input.value);
 
-    input.value = "";
+function register(){
 
+connect()
+
+let username=prompt("Введите имя")
+
+myName=username
+
+ws.onopen=()=>{
+
+ws.send("register:"+username)
+
+setTimeout(()=>ws.send("GET_USERS"),500)
+
+document.getElementById("account").innerText="Вы вошли как "+username
+
+}
+
+}
+
+
+function login(){
+
+connect()
+
+let code=prompt("Введите код")
+
+myName=localStorage.getItem("messenger_username")
+
+ws.onopen=()=>{
+
+ws.send("login:"+code)
+
+setTimeout(()=>ws.send("GET_USERS"),500)
+
+document.getElementById("account").innerText="Вы вошли как "+myName
+
+}
+
+}
+
+
+function sendMessage(){
+
+if(!currentChat)return
+
+let input=document.getElementById("message")
+
+ws.send(currentChat+":"+input.value)
+
+input.value=""
+
+}
+
+
+document.getElementById("message").addEventListener("keypress",function(e){
+
+if(currentChat){
+ws.send("TYPING:"+currentChat)
+}
+
+if(e.key==="Enter"){
+sendMessage()
+}
+
+})
+
+
+window.onload=function(){
+
+let code=localStorage.getItem("messenger_code")
+let username=localStorage.getItem("messenger_username")
+
+if(code){
+
+myName=username
+
+connect()
+
+ws.onopen=()=>{
+
+ws.send("login:"+code)
+
+setTimeout(()=>ws.send("GET_USERS"),500)
+
+document.getElementById("account").innerText="Вы вошли как "+username
+
+}
+
+}
+
+}
+
+
+if("serviceWorker" in navigator){
+navigator.serviceWorker.register("/sw.js")
 }
 
 </script>

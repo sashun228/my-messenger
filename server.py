@@ -25,7 +25,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
     login_data = await websocket.receive_text()
 
-    # регистрация
     if login_data.startswith("register:"):
 
         username = login_data.split(":")[1]
@@ -40,15 +39,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
         user_id = cursor.lastrowid
 
-        await websocket.send_text(f"YOUR_CODE:{code}")
+        await websocket.send_text("CODE:" + code)
 
-    # вход
     elif login_data.startswith("login:"):
 
         code = login_data.split(":")[1]
 
         cursor.execute(
-            "SELECT id, username FROM users WHERE user_code = ?", (code,)
+            "SELECT id, username FROM users WHERE user_code=?", (code,)
         )
 
         user = cursor.fetchone()
@@ -67,14 +65,71 @@ async def websocket_endpoint(websocket: WebSocket):
     connections[websocket] = username
 
     try:
+
         while True:
 
             data = await websocket.receive_text()
 
+            if data == "GET_USERS":
+
+                cursor.execute("SELECT username FROM users")
+
+                users = cursor.fetchall()
+
+                for u in users:
+
+                    name = u[0]
+
+                    status = "online" if name in connections.values() else "offline"
+
+                    await websocket.send_text(f"USER:{name}:{status}")
+
+                continue
+
+
+            if data.startswith("LOAD_CHAT:"):
+
+                friend = data.split(":")[1]
+
+                cursor.execute("SELECT id FROM users WHERE username=?", (friend,))
+                receiver = cursor.fetchone()
+
+                if receiver is None:
+                    continue
+
+                friend_id = receiver[0]
+
+                cursor.execute("""
+                SELECT users.username, messages.message
+                FROM messages
+                JOIN users ON users.id = messages.sender_id
+                WHERE (sender_id=? AND receiver_id=?)
+                OR (sender_id=? AND receiver_id=?)
+                """, (user_id, friend_id, friend_id, user_id))
+
+                messages = cursor.fetchall()
+
+                for m in messages:
+                    await websocket.send_text(f"MSG:{m[0]}:{m[1]}")
+
+                continue
+
+
+            if data.startswith("TYPING:"):
+
+                receiver = data.split(":")[1]
+
+                for client, name in connections.items():
+                    if name == receiver:
+                        await client.send_text(f"TYPING:{username}")
+
+                continue
+
+
             receiver_name, message = data.split(":", 1)
 
             cursor.execute(
-                "SELECT id FROM users WHERE username = ?", (receiver_name,)
+                "SELECT id FROM users WHERE username=?", (receiver_name,)
             )
 
             receiver = cursor.fetchone()
@@ -92,8 +147,11 @@ async def websocket_endpoint(websocket: WebSocket):
             conn.commit()
 
             for client, name in connections.items():
-                if name == receiver_name:
-                    await client.send_text(f"{username}: {message}")
+
+                if name == receiver_name or name == username:
+
+                    await client.send_text(f"MSG:{username}:{message}")
 
     except:
+
         del connections[websocket]
