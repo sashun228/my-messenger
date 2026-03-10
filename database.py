@@ -6,8 +6,9 @@ cursor = conn.cursor()
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT,
-    user_code TEXT UNIQUE
+    username TEXT UNIQUE,
+    user_code TEXT UNIQUE,
+    email TEXT
 )
 """)
 
