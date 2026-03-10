@@ -1,11 +1,16 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import FileResponse
 from database import cursor, conn
+import random
+import string
 
 app = FastAPI()
 
 connections = {}
-clients = []
+
+
+def generate_code():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 
 @app.get("/")
@@ -18,49 +23,77 @@ async def websocket_endpoint(websocket: WebSocket):
 
     await websocket.accept()
 
-    username = await websocket.receive_text()
+    login_data = await websocket.receive_text()
 
-    # проверяем есть ли пользователь
-    cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
-    user = cursor.fetchone()
+    # регистрация
+    if login_data.startswith("register:"):
 
-    if user is None:
-        cursor.execute("INSERT INTO users (username) VALUES (?)", (username,))
+        username = login_data.split(":")[1]
+
+        code = generate_code()
+
+        cursor.execute(
+            "INSERT INTO users (username, user_code) VALUES (?, ?)",
+            (username, code)
+        )
         conn.commit()
+
         user_id = cursor.lastrowid
-    else:
+
+        await websocket.send_text(f"YOUR_CODE:{code}")
+
+    # вход
+    elif login_data.startswith("login:"):
+
+        code = login_data.split(":")[1]
+
+        cursor.execute(
+            "SELECT id, username FROM users WHERE user_code = ?", (code,)
+        )
+
+        user = cursor.fetchone()
+
+        if user is None:
+            await websocket.close()
+            return
+
         user_id = user[0]
+        username = user[1]
 
-    # отправляем историю сообщений
-    cursor.execute(
-        "SELECT users.username, messages.message FROM messages JOIN users ON users.id = messages.user_id ORDER BY messages.id"
-    )
-
-    history = cursor.fetchall()
-
-    for username_db, message_db in history:
-        await websocket.send_text(f"{username_db}: {message_db}")
+    else:
+        await websocket.close()
+        return
 
     connections[websocket] = username
-    clients.append(websocket)
 
     try:
         while True:
 
-            message = await websocket.receive_text()
+            data = await websocket.receive_text()
 
-            # сохраняем сообщение
+            receiver_name, message = data.split(":", 1)
+
             cursor.execute(
-                "INSERT INTO messages (user_id, message) VALUES (?, ?)",
-                (user_id, message)
+                "SELECT id FROM users WHERE username = ?", (receiver_name,)
             )
+
+            receiver = cursor.fetchone()
+
+            if receiver is None:
+                continue
+
+            receiver_id = receiver[0]
+
+            cursor.execute(
+                "INSERT INTO messages (sender_id, receiver_id, message) VALUES (?, ?, ?)",
+                (user_id, receiver_id, message)
+            )
+
             conn.commit()
 
-            # отправляем всем
-            for client in clients:
-                if client != websocket:
+            for client, name in connections.items():
+                if name == receiver_name:
                     await client.send_text(f"{username}: {message}")
 
     except:
-        clients.remove(websocket)
         del connections[websocket]

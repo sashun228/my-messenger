@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
 <meta charset="UTF-8">
 <title>Messenger</title>
@@ -7,41 +8,92 @@
 
 <body>
 
-<h2>Чат</h2>
+<h2>Messenger</h2>
 
-<input id="message" placeholder="Напиши сообщение">
+<button onclick="register()">Регистрация</button>
+<button onclick="login()">Вход</button>
+
+<br><br>
+
+<input id="message" placeholder="username:сообщение">
 <button onclick="sendMessage()">Отправить</button>
 
 <ul id="messages"></ul>
 
 <script>
 
-const ws = new WebSocket(
-  (location.protocol === "https:" ? "wss://" : "ws://") +
-  location.host +
-  "/ws"
-);
+let ws;
 
-ws.onmessage = function(event) {
-    const messages = document.getElementById("messages");
-    const li = document.createElement("li");
-    li.textContent = event.data;
-    messages.appendChild(li);
-};
+function connect() {
+
+    ws = new WebSocket(
+        (location.protocol === "https:" ? "wss://" : "ws://") +
+        location.host +
+        "/ws"
+    );
+
+    ws.onmessage = function(event) {
+
+        const messages = document.getElementById("messages");
+
+        const li = document.createElement("li");
+
+        li.textContent = event.data;
+
+        messages.appendChild(li);
+
+    };
+
+}
+
+function register() {
+
+    connect();
+
+    const username = prompt("Введите имя");
+
+    ws.onopen = () => {
+        ws.send("register:" + username);
+    };
+
+    ws.onmessage = function(event) {
+
+        if(event.data.startsWith("YOUR_CODE:")){
+
+            const code = event.data.split(":")[1];
+
+            alert("Ваш код: " + code + " Сохраните его!");
+
+        }
+
+    };
+
+}
+
+function login() {
+
+    connect();
+
+    const code = prompt("Введите ваш код");
+
+    ws.onopen = () => {
+        ws.send("login:" + code);
+    };
+
+}
 
 function sendMessage() {
+
     const input = document.getElementById("message");
+
     ws.send(input.value);
 
-    const messages = document.getElementById("messages");
-    const li = document.createElement("li");
-    li.textContent = "Я: " + input.value;
-    messages.appendChild(li);
-
     input.value = "";
+
 }
 
 </script>
 
 </body>
+
 </html>
